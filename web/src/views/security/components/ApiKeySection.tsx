@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Banner, Button, Input, Tag, Toast, Tooltip } from '@douyinfe/semi-ui'
+import { Banner, Button, Input, Select, Tag, Toast, Tooltip } from '@douyinfe/semi-ui'
 import { IconCopy, IconDelete } from '@douyinfe/semi-icons'
 import { getAPIKeyInfo, revokeAPIKey, rotateAPIKey, type UserAPIKeyInfo } from '@/api/apiKey'
 import { copyTextWithFallback } from '@/utils/clipboard'
@@ -13,6 +13,23 @@ import { confirmModal } from '@/utils/confirm'
 import { formatDateTime } from '@/utils/format'
 import { useUserStore } from '@/stores/user'
 import { ROLES } from '@/config/constants'
+
+/** 有效期选项，0 表示永久。 */
+const EXPIRY_OPTIONS = [
+  { label: '30 天', value: 30 },
+  { label: '180 天', value: 180 },
+  { label: '365 天', value: 365 },
+  { label: '永久有效', value: 0 },
+]
+
+/** 根据当前 Key 状态推断有效期默认选项。 */
+function inferExpiryDays(info: UserAPIKeyInfo | null): number {
+  if (!info?.enabled) return 30
+  if (!info.expires_at) return 0
+  const remainDays = (new Date(info.expires_at).getTime() - Date.now()) / 86400000
+  if (remainDays <= 0) return 30
+  return [30, 180, 365].reduce((best, cur) => (Math.abs(cur - remainDays) < Math.abs(best - remainDays) ? cur : best), 365)
+}
 
 interface CopyActionProps {
   text: string
@@ -60,6 +77,7 @@ export default function ApiKeySection() {
   const [generating, setGenerating] = useState(false)
   const [revoking, setRevoking] = useState(false)
   const [trustedIP, setTrustedIP] = useState('')
+  const [expiryDays, setExpiryDays] = useState(30)
 
   const loadInfo = useCallback(async () => {
     setLoading(true)
@@ -67,6 +85,7 @@ export default function ApiKeySection() {
       const res = await getAPIKeyInfo()
       setInfo(res.data || null)
       setTrustedIP(res.data?.trusted_ip || '')
+      setExpiryDays(inferExpiryDays(res.data || null))
     } catch {
       // 请求层已统一提示
     } finally {
@@ -85,11 +104,12 @@ export default function ApiKeySection() {
       return
     }
     const enabled = !!info?.enabled
+    const expiryLabel = EXPIRY_OPTIONS.find((item) => item.value === expiryDays)?.label || ''
     const confirmed = await confirmModal({
       title: enabled ? '重新生成 API 凭证' : '生成 API 凭证',
       content: enabled
-        ? '重新生成后，当前 API Key 会立即失效。请确认外部程序已准备好更新凭证。'
-        : '生成后请立即复制并保存 API Key，页面刷新或离开后无法再次查看明文。',
+        ? `重新生成后，当前 API Key 会立即失效，新 Key 有效期：${expiryLabel}。请确认外部程序已准备好更新凭证。`
+        : `生成后请立即复制并保存 API Key，页面刷新或离开后无法再次查看明文。有效期：${expiryLabel}。`,
       okText: enabled ? '重新生成' : '生成',
       danger: enabled,
     })
@@ -97,7 +117,10 @@ export default function ApiKeySection() {
 
     setGenerating(true)
     try {
-      const res = await rotateAPIKey(publicAdminPolicy ? { trusted_ip: trustedIP.trim() } : undefined)
+      const res = await rotateAPIKey({
+        ...(publicAdminPolicy ? { trusted_ip: trustedIP.trim() } : {}),
+        expires_in_days: expiryDays,
+      })
       setInfo(res.data || null)
       setTrustedIP(res.data?.trusted_ip || '')
       setGeneratedKey(res.data?.api_key || '')
@@ -149,6 +172,20 @@ export default function ApiKeySection() {
         </div>
       </div>
 
+      <div className="sec-row">
+        <div className="sec-row-label">有效期</div>
+        <div className="sec-row-main">
+          <Select
+            style={{ width: '100%' }}
+            value={expiryDays}
+            onChange={(value) => setExpiryDays(Number(value))}
+            optionList={EXPIRY_OPTIONS}
+            disabled={generating}
+          />
+          <div className="sec-row-tip">仅对重新生成后的新 Key 生效；永久有效的 Key 泄露后请立即重新生成。</div>
+        </div>
+      </div>
+
       {publicAdminPolicy && (
         <>
           <div className="sec-row">
@@ -167,12 +204,6 @@ export default function ApiKeySection() {
             <div className="sec-row-label">公网可用性</div>
             <div className="sec-row-main">
               <Tag color={info?.public_usable ? 'green' : 'orange'}>{info?.public_usable ? '可用于公网' : '暂不可用于公网'}</Tag>
-            </div>
-          </div>
-          <div className="sec-row">
-            <div className="sec-row-label">到期时间</div>
-            <div className="sec-row-main">
-              <Input value={formatDateTime(info?.expires_at)} disabled />
             </div>
           </div>
         </>
@@ -197,6 +228,16 @@ export default function ApiKeySection() {
         <div className="sec-row-label">创建时间</div>
         <div className="sec-row-main">
           <Input value={formatDateTime(info?.created_at)} disabled />
+        </div>
+      </div>
+
+      <div className="sec-row">
+        <div className="sec-row-label">到期时间</div>
+        <div className="sec-row-main">
+          <Input
+            value={info?.enabled ? (info?.expires_at ? formatDateTime(info.expires_at) : '永久有效') : '未生成'}
+            disabled
+          />
         </div>
       </div>
 

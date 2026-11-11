@@ -200,12 +200,12 @@ export const endpointDescriptions: Record<string, EndpointDescription> = {
   },
   'GET /auth/api-key': {
     summary: '读取当前用户 API Key 状态',
-    response: 'data: api_key_id, key_prefix, created_at, expires_at, trusted_ip, last_used_at, enabled, public_access_enabled, public_usable。公网管理员 Key 固定 30 天有效期并只能绑定一个固定 IP；局域网请求不受期限和 IP 限制。',
+    response: 'data: api_key_id, key_prefix, created_at, expires_at, trusted_ip, last_used_at, enabled, public_access_enabled, public_usable。expires_at 为空表示永久有效；公网管理员 Key 只能绑定一个固定 IP。',
   },
   'POST /auth/api-key': {
     summary: '生成或重新生成 API Key',
-    body: 'JSON: trusted_ip（公网模式下管理员必填，只能填写一个固定 IPv4 或 IPv6 地址，不支持 CIDR、多个地址、端口或主机名）',
-    response: 'data: api_key_id, api_key, key_prefix, created_at, expires_at, trusted_ip, enabled；api_key 仅返回一次。公网模式下管理员必须完成 2FA + 邮箱双重验证。',
+    body: 'JSON: expires_in_days（有效期天数，可选 30 / 180 / 365，0 表示永久，未传时公网管理员默认 30 天、其余用户永久）、trusted_ip（公网模式下管理员必填，只能填写一个固定 IPv4 或 IPv6 地址，不支持 CIDR、多个地址、端口或主机名）',
+    response: 'data: api_key_id, api_key, key_prefix, created_at, expires_at, trusted_ip, enabled；api_key 仅返回一次，expires_at 为空表示永久有效。公网模式下管理员必须完成 2FA + 邮箱双重验证。',
     notes: ['仅支持 JWT access，不支持 API Key；公网模式下管理员必须完成 2FA 与邮箱验证码双重校验。'],
   },
   'DELETE /auth/api-key': {

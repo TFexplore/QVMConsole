@@ -12,6 +12,8 @@ import (
 
 type RotateAPIKeyRequest struct {
 	TrustedIP string `json:"trusted_ip"`
+	// ExpiresInDays 有效期天数，0 表示永久；nil 时沿用历史默认（公网管理员 30 天，其余永久）。
+	ExpiresInDays *int `json:"expires_in_days"`
 }
 
 // GetAPIKeyInfo 获取当前用户 API Key 元信息。
@@ -37,6 +39,12 @@ func RotateAPIKey(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
 		return
 	}
+	if req.ExpiresInDays != nil {
+		if err := service.ValidateAPIKeyExpiryDays(*req.ExpiresInDays); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+			return
+		}
+	}
 	if service.IsAdminAPIKeyPublicPolicyEnabled(user) {
 		normalized, err := service.NormalizeTrustedIP(req.TrustedIP)
 		if err != nil {
@@ -50,7 +58,7 @@ func RotateAPIKey(c *gin.Context) {
 	} else if !requireHighRiskVerification(c, "rotate_api_key") {
 		return
 	}
-	key, err := service.RotateUserAPIKey(user, req.TrustedIP)
+	key, err := service.RotateUserAPIKey(user, req.TrustedIP, req.ExpiresInDays)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "生成 API 凭证失败: " + err.Error()})
 		return

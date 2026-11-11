@@ -29,7 +29,7 @@ export function getAPIKeyInfo() {
 }
 
 /** 生成或重新生成当前用户 API Key。 */
-export function rotateAPIKey(data?: { trusted_ip?: string }) {
+export function rotateAPIKey(data?: { trusted_ip?: string; expires_in_days?: number }) {
   return service.post<unknown, ApiResponse<GeneratedAPIKey>>('/auth/api-key', data || {})
 }
 

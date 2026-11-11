@@ -172,7 +172,7 @@ export default function SecurityTab({ form, patch, saveBeforeAction, refresh }: 
       const ok = await confirmModal({
         title: '开启公网访问',
         content:
-          '开启后，所有非局域网请求都将进入面板；管理员 API Key 将固定要求 30 天有效期和单个受信任 IP，现有管理员 API Key 会立即撤销。请确认已为所有管理员绑定 2FA，并确认继续。',
+          '开启后，所有非局域网请求都将进入面板；管理员 API Key 将要求绑定单个受信任 IP（有效期生成时可选，支持永久），现有管理员 API Key 会立即撤销。请确认已为所有管理员绑定 2FA，并确认继续。',
         okText: '确认开启公网访问',
         danger: true,
       })

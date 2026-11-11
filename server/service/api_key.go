@@ -22,7 +22,31 @@ import (
 const (
 	apiKeyIDPrefix     = "kvm_id_"
 	apiKeySecretPrefix = "kvm_sk_"
+	// defaultPublicAdminAPIKeyExpiryDays 公网管理员未显式指定有效期时的默认天数。
+	defaultPublicAdminAPIKeyExpiryDays = 30
 )
+
+// allowedAPIKeyExpiryDays 允许的 API Key 有效期选项，0 表示永久。
+var allowedAPIKeyExpiryDays = []int{0, 30, 180, 365}
+
+// ValidateAPIKeyExpiryDays 校验生成 API Key 时指定的有效期天数。
+func ValidateAPIKeyExpiryDays(days int) error {
+	for _, allowed := range allowedAPIKeyExpiryDays {
+		if days == allowed {
+			return nil
+		}
+	}
+	return fmt.Errorf("API Key 有效期仅支持 30、180、365 天或永久")
+}
+
+// apiKeyExpiresAt 根据有效期天数计算到期时间，0 表示永久（返回 nil）。
+func apiKeyExpiresAt(days int) *time.Time {
+	if days == 0 {
+		return nil
+	}
+	expires := time.Now().Add(time.Duration(days) * 24 * time.Hour)
+	return &expires
+}
 
 // UserAPIKeyInfo 前端展示用 API Key 信息。
 type UserAPIKeyInfo struct {
@@ -69,7 +93,8 @@ func GetUserAPIKeyInfo(userID uint) (*UserAPIKeyInfo, error) {
 }
 
 // RotateUserAPIKey 生成或轮换用户 API Key。明文 Key 只返回一次。
-func RotateUserAPIKey(user *model.User, trustedIP string) (*GeneratedAPIKey, error) {
+// expiresInDays 为 nil 时沿用历史默认：公网管理员 30 天，其余用户永久。
+func RotateUserAPIKey(user *model.User, trustedIP string, expiresInDays *int) (*GeneratedAPIKey, error) {
 	if user == nil {
 		return nil, fmt.Errorf("用户不存在")
 	}
@@ -81,10 +106,16 @@ func RotateUserAPIKey(user *model.User, trustedIP string) (*GeneratedAPIKey, err
 			return nil, err
 		}
 		trustedIP = normalized
-		expires := time.Now().Add(30 * 24 * time.Hour)
-		expiresAt = &expires
+		days := defaultPublicAdminAPIKeyExpiryDays
+		if expiresInDays != nil {
+			days = *expiresInDays
+		}
+		expiresAt = apiKeyExpiresAt(days)
 	} else {
 		trustedIP = ""
+		if expiresInDays != nil {
+			expiresAt = apiKeyExpiresAt(*expiresInDays)
+		}
 	}
 	apiKeyID, err := randomToken(apiKeyIDPrefix, 18)
 	if err != nil {
@@ -187,7 +218,7 @@ func AuthenticateAPIKey(apiKeyID, apiKey, clientIP string) (*model.User, error) 
 	}
 	if config.GlobalConfig.PublicAccessEnabled && user.Role == "admin" && !IsLANIP(clientIP) {
 		now := time.Now()
-		if record.ExpiresAt == nil || !now.Before(*record.ExpiresAt) || strings.TrimSpace(record.TrustedIP) == "" {
+		if (record.ExpiresAt != nil && !now.Before(*record.ExpiresAt)) || strings.TrimSpace(record.TrustedIP) == "" {
 			return nil, fmt.Errorf("API 凭证无效")
 		}
 		requestIP, requestErr := ParseClientIP(clientIP)
@@ -208,7 +239,8 @@ func buildAPIKeyInfo(key *model.UserAPIKey, user *model.User) UserAPIKeyInfo {
 	enabled := key.RevokedAt == nil
 	publicUsable := enabled
 	if config.GlobalConfig.PublicAccessEnabled && user != nil && user.Role == "admin" {
-		publicUsable = enabled && key.ExpiresAt != nil && time.Now().Before(*key.ExpiresAt) && strings.TrimSpace(key.TrustedIP) != ""
+		notExpired := key.ExpiresAt == nil || time.Now().Before(*key.ExpiresAt)
+		publicUsable = enabled && notExpired && strings.TrimSpace(key.TrustedIP) != ""
 	}
 	return UserAPIKeyInfo{
 		APIKeyID:            key.APIKeyID,
